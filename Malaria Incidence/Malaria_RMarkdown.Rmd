@@ -1,0 +1,236 @@
+---
+title: "Malaria RMarkdown"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(ggplot2)
+library(readr)
+library(dplyr)
+library(sqldf)
+library(stringr)
+```
+
+## Exploratory Analysis
+
+```{r, include=TRUE}
+#this chunk is for setup of df env, standardising colnames etc.
+
+#variables to specify file names for future pipelining
+  #add file names including .csv extension at back here inside quotation marks
+avg_deaths <- "malaria_deaths.csv"
+deaths_by_age <- "malaria_deaths_age.csv"
+avg_inc <- "malaria_inc.csv"
+
+#df setup
+malaria_deaths <- read_csv(avg_deaths,show_col_types = FALSE)
+malaria_deaths_age <- read_csv(deaths_by_age,show_col_types = FALSE)
+malaria_inc <- read_csv(avg_inc,show_col_types = FALSE)
+
+#standardize column names case for simpler df joining later 
+names(malaria_deaths)<-toupper(names(malaria_deaths))
+names(malaria_deaths)[4] <- 'DEATHS_PER_100K'
+
+names(malaria_deaths_age)<-toupper(names(malaria_deaths_age))
+names(malaria_deaths_age)[6] <- 'ABS_DEATHS'
+
+names(malaria_inc)<-toupper(names(malaria_inc))
+names(malaria_inc)[4] <- 'INCIDENCE_PER_1K_AT_RISK'
+
+```
+
+
+```{r, include=TRUE}
+#this chunk is to check how data is being arranged in the data sets 
+  #filter out rows with CODE = NA since agg entities do not have a CODE associated with them  
+macro_grps_regions <- malaria_deaths %>% filter(is.na(CODE))
+
+#there seems to be 2 main categories for macro_grps: regional and SDI level. We will categorize the macro_grps to ensure that we compare within similar categories to ensure our analysis are accurate (minimize effect of confounding variables)
+malaria_deaths_agg_regions <- macro_grps_regions
+malaria_deaths_agg_regions <- malaria_deaths_agg_regions %>%
+  mutate(HIGHER_LVL_CAT = case_when(str_detect(ENTITY,"SDI")~"SDI Level",
+                                    TRUE~"Regional"))
+
+#Pull to see average deaths per region over last X years. no_of_years variables gives us the last X years of data
+no_of_years <- 5
+
+malaria_deaths_X_years_regions <- malaria_deaths_agg_regions 
+malaria_deaths_X_years_regions <- malaria_deaths_X_years_regions %>% group_by(ENTITY) %>% arrange(desc(YEAR), .by_group = TRUE) %>% slice(1:no_of_years)
+
+#Retrieve top Y regions with highest overall average malaria death rate. Edit top_y_regions variable for future pipeline needs
+top_y_regions <- 10
+
+# Suppress summarize info
+options(dplyr.summarise.inform = FALSE)
+
+malaria_deaths_X_years_regions_overall <- malaria_deaths_X_years_regions
+malaria_deaths_X_years_regions_overall <- malaria_deaths_X_years_regions_overall %>% filter(HIGHER_LVL_CAT == 'Regional') %>% group_by(ENTITY) %>% 
+  summarize(DEATHS_PER_100K_TIME_AVG=mean(DEATHS_PER_100K)); 
+
+malaria_deaths_X_years_regions_overall_topY <- malaria_deaths_X_years_regions_overall %>% arrange(desc(DEATHS_PER_100K_TIME_AVG)) %>%
+slice(1:top_y_regions)
+
+```
+
+
+```{r}
+#pull out data for time series first pass look
+#only keep regions with top Y highest avg malaria deaths for past X years
+time_trend_malaria_deaths <- malaria_deaths_X_years_regions %>% inner_join(malaria_deaths_X_years_regions_overall_topY, by='ENTITY')
+
+ggplot(data=time_trend_malaria_deaths,mapping=aes(x=YEAR,y=DEATHS_PER_100K), group=ENTITY) + geom_line(aes(color=ENTITY)) +geom_point(aes(color=ENTITY)) + labs(x="Year",y="Malaria Deaths Per 100K", title="Malaria Death Rate Time Trend",subtitle = paste0('For Top ',top_y_regions,' Regions with Highest Avg Death Rate for Past ',no_of_years,' Years'))
+
+#check on overall mean of malaria deaths annually across all regions
+malaria_deaths_X_years_regions %>% group_by(YEAR) %>% summarise(global_death_rate_per_100k = mean(DEATHS_PER_100K)) %>% arrange(desc(YEAR))
+```
+
+
+A quick look at the data sets tells us a few key features of the data:
+
+1. For all 3 data sets, data is given at the following level of detail: year > entity > measure value.
+2. There are macro level entity grouping in the data sets (eg. "High SDI", "Oceanic"). We will categorize these macro groupings into 2 major higher level groupings: **Regional** and **SDI (Social Development Index) Level**. This will enable us to make appropriate comparative analysis within each MECE (Mutually Exclusive, Collective Exhaustive) grouping.
+3. The top 5 regions with highest malaria death rates sees average malaria death rates significantly higher than the global average (~10), hence we focus on presenting these top 5 regions' performance, as that is where the implemented policies have the potential to make the greatest impact.
+4. *'malaria_deaths'* gives the death rate as number of deaths per 100,000 individuals, while *'malaria_deaths_age'* gives the absolute number of deaths per age group. We will be standardizing the units for death rate to deaths per 100,000 individuals, so that we will be able to easily do a deep dive analysis from average death rate in entity > drill down into death rate for each age category.
+5. *'malaria_inc'* only gives the data in intervals of 5 years (and only starting from year 2000), compared to the other 2 data sets which gives deaths annually (starting from year 1990). As such, we will only be computing the overall infection mortality rate (see Viz 3 below) in 5-yearly intervals.
+
+With these notes in mind, we will focus on creating visualizations to inform users on which regions sees the highest average rates of malaria deaths/incidences, as well as the associated proportion of deaths contributed by each age group.
+
+## Pre-processing
+
+In this next section, we will continue pre-processing the data sets for ease of use in our visualization generations later on.
+```{r}
+#this chunk is to start pre-processing the data into a more user-friendly format for visualizations
+
+
+#malaria deaths data sets 
+#join average deaths to age group deaths breakdown
+subset_age_regional <- malaria_deaths_age %>% select(c("ENTITY","YEAR","AGE_GROUP","ABS_DEATHS"))
+malaria_deaths_combined_regional <- malaria_deaths_agg_regions %>% left_join(subset_age_regional,by=c("ENTITY","YEAR"))
+
+#temp table to be used in converting abs deaths to deaths per 100K for breakdown analysis
+abs_deaths_per_year_entity <- malaria_deaths_combined_regional %>% group_by(ENTITY,YEAR) %>% summarise(TOTAL_ABS_DEATHS = sum(ABS_DEATHS))
+
+#creating new col "DEATHS_PER_100K_BD", which calculates death rate per 100K for each age group
+malaria_deaths_combined_regional <- malaria_deaths_combined_regional %>% left_join(abs_deaths_per_year_entity,by=c("ENTITY","YEAR"))
+malaria_deaths_combined_regional <- malaria_deaths_combined_regional %>% mutate(DEATHS_PER_100K_BD = ABS_DEATHS/TOTAL_ABS_DEATHS*DEATHS_PER_100K)
+
+
+#malaria incidences data set
+#add annual deaths data to malaria_inc data then standardize units
+subset_overall_deaths <- malaria_deaths %>% select("ENTITY","YEAR","DEATHS_PER_100K")
+malaria_inc_combined <- malaria_inc %>% inner_join(subset_overall_deaths,by=c("ENTITY","YEAR"))
+
+#convert incidence rate to per 100K
+malaria_inc_combined <- malaria_inc_combined %>% mutate(INCIDENCE_PER_100K_AT_RISK = INCIDENCE_PER_1K_AT_RISK*100)
+
+#calculate mortality if infected rate. 
+malaria_inc_combined_country_lvl <- malaria_inc_combined %>% mutate(MORTALITY_IF_INFECTED_pct = DEATHS_PER_100K/INCIDENCE_PER_100K_AT_RISK*100) %>%
+  filter(!is.na(CODE))
+
+```
+
+
+## Data Visualizations
+
+The data sets have been cleaned and prepared, and a quick summary of the variables & tables we will be pulling from for visualization is given below:
+
+* *malaria_deaths_combined_regional* gives the avg death rates as well as the death rate breakdown by age groups
+* *malaria_inc_combined_country_lvl* gives the malaria incidence per 100K at risk population, as well as the mortality rate if infected (in %) under MORTALITY_IF_INFECTED_pct column
+* Variables will be used so that we can dynamically change the time range / number of regions we would like to pull for. Time range will be controlled by the **no_of_years_regional** variable while **top_y_regions_regional** will control the top number of regions we would like to pull for for viz 1
+* We set up similar variables for viz 3 (incidence rate): **top_y_countries**. 
+
+
+```{r}
+#Viz 1
+
+#Pull to see average deaths per region over last X years. no_of_years variables gives us the last X years of data
+no_of_years_regional <- 15
+
+malaria_deaths_viz1_years <- malaria_deaths_agg_regions 
+malaria_deaths_viz1_years <- malaria_deaths_viz1_years %>% group_by(ENTITY) %>% arrange(desc(YEAR), .by_group = TRUE) %>% slice(1:no_of_years_regional)
+
+#Retrieve top Y regions with highest overall average malaria death rate. Edit top_y_regions variable for future pipeline needs. Max regions of 10.
+top_y_regions_regional <- 5
+
+malaria_deaths_viz1_years_region <- malaria_deaths_viz1_years
+malaria_deaths_viz1_years_region <- malaria_deaths_viz1_years_region %>% filter(HIGHER_LVL_CAT == 'Regional') %>% group_by(ENTITY) %>% 
+  summarize(DEATHS_PER_100K_TIME_AVG=mean(DEATHS_PER_100K)) 
+
+malaria_deaths_viz1_years_region_topY <- malaria_deaths_viz1_years_region %>% arrange(desc(DEATHS_PER_100K_TIME_AVG)) %>%
+slice(1:top_y_regions_regional)
+
+#only keep regions with top Y highest avg malaria deaths for past X years
+YEAR <- unique(malaria_deaths_viz1_years$YEAR)
+year_df <- as.data.frame(YEAR)
+
+
+time_trend_malaria_deaths_viz1 <- malaria_deaths_combined_regional %>% inner_join(malaria_deaths_viz1_years_region_topY, by='ENTITY') %>%
+  inner_join(year_df, by='YEAR')
+time_trend_malaria_deaths_viz1$AGE_GROUP <- factor(time_trend_malaria_deaths_viz1$AGE_GROUP, levels = c("70 or older", "50-69", "15-49","5-14","Under 5"))
+
+
+ggplot(data=time_trend_malaria_deaths_viz1,mapping=aes(x=YEAR,y=DEATHS_PER_100K_BD)) + geom_col(aes(fill=AGE_GROUP)) + labs(x="Year",y="Malaria Deaths Per 100K", title="Malaria Death Rate Time Trend",subtitle = paste0('For Top ',top_y_regions_regional,' Regions with Highest Avg Death Rate for Past ',no_of_years_regional,' Years')) + facet_wrap(~ENTITY) + theme(axis.text.x = element_text(angle = 25), strip.text.x = element_text(size = 6.5))
+
+
+#Viz 2
+
+time_trend_malaria_deaths_viz2 <- malaria_deaths_combined_regional %>% filter(HIGHER_LVL_CAT == 'SDI Level') %>% inner_join(year_df, by='YEAR')
+time_trend_malaria_deaths_viz2$AGE_GROUP <- factor(time_trend_malaria_deaths_viz2$AGE_GROUP, levels = c("70 or older", "50-69", "15-49","5-14","Under 5"))
+
+
+ggplot(data=time_trend_malaria_deaths_viz2,mapping=aes(x=YEAR,y=DEATHS_PER_100K_BD)) + geom_col(aes(fill=AGE_GROUP)) + labs(x="Year",y="Malaria Deaths Per 100K", title=paste0("Malaria Death Rate Time Trend for Past ",no_of_years_regional," Years"), subtitle = "Categorize by SDI Level") + facet_wrap(~ENTITY) + theme(axis.text.x = element_text(angle = 25))
+
+
+#Viz 3
+
+#Retrieve top Y countries with highest overall average malaria incidence rate. Edit top_y_countries variable for future pipeline needs. Max regions of 10.
+top_y_countries <- 4
+
+malaria_inc_viz3_countries <- malaria_inc_combined_country_lvl
+malaria_inc_viz3_countries <- malaria_inc_viz3_countries %>% group_by(ENTITY) %>% 
+  summarize(INCIDENCE_PER_1K_AT_RISK_AVG=mean(INCIDENCE_PER_1K_AT_RISK)) 
+
+malaria_inc_viz3_countries_topY <- malaria_inc_viz3_countries %>% arrange(desc(INCIDENCE_PER_1K_AT_RISK_AVG)) %>%
+slice(1:top_y_countries)
+
+#only keep countries with top Y highest avg malaria incidence
+time_trend_malaria_inc_viz3 <- malaria_inc_combined_country_lvl %>% inner_join(malaria_inc_viz3_countries_topY, by='ENTITY')
+
+time_trend_malaria_inc_viz3_stacked <- cbind(time_trend_malaria_inc_viz3[1:3], stack(time_trend_malaria_inc_viz3[5:6]))
+names(time_trend_malaria_inc_viz3_stacked)[5] <- 'GRP'
+time_trend_malaria_inc_viz3_stacked <- time_trend_malaria_inc_viz3_stacked %>% arrange(ENTITY,YEAR,GRP)
+
+ggplot(data=time_trend_malaria_inc_viz3_stacked,mapping=aes(x=YEAR)) +  
+  scale_y_continuous(
+    
+    # Features of the first axis
+    name = "Malaria Incidence/Deaths Per 100K",
+    
+    # Add a second axis and specify its features
+    sec.axis = sec_axis(~.*10^(-6)*4, name="Mortality if Infected (%)")
+  ) + 
+  geom_col(aes(y=values,fill=GRP), position = position_dodge()) + 
+  geom_line(data = time_trend_malaria_inc_viz3, aes(x=YEAR, y=MORTALITY_IF_INFECTED_pct/(10^(-6)*4))) + 
+  geom_point(data = time_trend_malaria_inc_viz3, aes(x=YEAR, y=MORTALITY_IF_INFECTED_pct/(10^(-6)*4))) +
+  labs(x="Year", title="Malaria Incidence/Death Rate Time Trend",subtitle = paste0('For Top ',top_y_countries,' Countries with Highest Avg Incidence Rate'), caption = "LINE: Mortality if Infected, BAR: Deaths per 100K") + 
+  facet_wrap(~ENTITY) + 
+  theme(axis.text.x = element_text(angle = 25), strip.text.x = element_text(size = 6.5), axis.title.y.right = element_text(size=10), axis.title.y = element_text(size=10))
+```
+
+For Viz 3, the line graph is showing the percentage chance of malaria mortality given infection (calculated by: DEATHS_PER_100K/INCIDENCE_PER_100K). This statistic gives us a convenient overall summary measure telling us the performance of both deaths and incidences of malaria for a given country. 
+
+For instance, a rise in this metric can be due to 2 scenarios:
+
+1. Deaths increasing faster than incidences 
+2. Deaths decreasing slower than incidences
+
+Both cases are not ideal, assuming our end goal is to eliminate absolute deaths by malaria, by either decreasing contraction rate (incidences) or mortality rate (deaths). However, between the 2, Scenario 1 points to a much more severe problem, as it represents a deterioration of the deaths by malaria situation. We should always look to the respective constituent variables (DEATHS_PER_100K & INCIDENCE_PER_100K) to determine which scenario we are dealing with. 
+
+## Final Words
+
+Lastly, there is also a possibility to use the final processed data sets for interactive visualizations in programs such as Tableau or Power BI. A big advantage of using such dashboards would be that the final visualization can be created with multiple tune-able parameters which each individual will be able to dynamically set, allowing for in-depth analysis according to their needs. A sample dashboard has also been implemented in Tableau at the following links as proof-of-concept:
+
+[Malaria Incidence Dashboard](https://public.tableau.com/views/Malaria_Case_Study_Dashboard/MalariaIncidenceBreakdown?:language=en-US&publish=yes&:display_count=n&:origin=viz_share_link)
+
+[Malaria Deaths Dashboard](https://public.tableau.com/views/Malaria_Case_Study_Dashboard/MalariaDeathsBreakdown?:language=en-US&publish=yes&:display_count=n&:origin=viz_share_link)
