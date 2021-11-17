@@ -173,7 +173,7 @@ pre code {
 <p>We are given a fictional data set containing employee information from IBM. The goal is to explore the given data using suitable analysis methods to suggest possible reasons for employee attrition. Using the insights obtained from this analysis, we will then create a Tableau Story to communicate to stakeholders the results, and suggest the most likely mechanism these factors are leading to employee attrition.</p>
 <div id="environment-setup" class="section level2">
 <h2>Environment Setup</h2>
-<p>A cursory look at the data reveals that there are 2 main types of column data: categorical and continuous. As the statistical tests to run differs for each of these data types, we will first proceed by spitting the raw data into 2 distinct dataframes (categorical data vs continuous data). Within each subgroup, we will then determine which variables are most likely to affect employee attrition rate by using appropriate statistical testing methods.</p>
+<p>A cursory look at the data reveals that there are 2 main types of column data: categorical and continuous. As the statistical tests to run differs for each of these data types, we will first proceed by spitting the raw data into 2 distinct data frames (categorical data vs continuous data). Within each subgroup, we will then determine which variables are most likely to affect employee attrition rate by using appropriate statistical testing methods.</p>
 <pre class="r"><code>#set up df: split into 2 distinct df for categorical dv and continuous dv
 raw_df &lt;- read_csv(&quot;WA_Fn-UseC_-HR-Employee-Attrition.csv&quot;,show_col_types = FALSE)
 
@@ -206,15 +206,14 @@ cat_df &lt;- raw_df %&gt;% select (c(&quot;Attrition&quot;,
 
   #convert all data types to character type first for later analysis
 nums&lt;- sapply(cat_df, is.numeric)
-cat_df[ , nums] &lt;- as.data.frame(apply(cat_df[ , nums], 2, as.character))</code></pre>
+cat_df[ , nums] &lt;- as.data.frame(apply(cat_df[ , nums], 2, as.character))
+
+write.csv(cont_df,&quot;continuous_vars_df.csv&quot;,row.names = FALSE)</code></pre>
 </div>
 <div id="continuous-dvs" class="section level2">
 <h2>Continuous DVs</h2>
 <div id="exploratory-data-analysis" class="section level3">
 <h3>Exploratory Data Analysis</h3>
-<ul>
-<li>Continuous df &gt; response variable will be cat attrition variable (Yes vs No) , summarise mean of continuous variables and compare for attrition Yes vs attrition No. Take ref to attrition No mean to calculate % change. Can groupby then order by attrition field and finally use lag() to calc (this part prob can use Tableau LOD to find also) *find top 3 variables for which % change is largest, then use ggplot2 to plot out and facet wrap</li>
-</ul>
 <p>To start off with, we will be pre-processing the continuous measures (CMs) data set in order to decide which CM has the highest potential impact on attrition rate, and then further run hypothesis testing to see if these observed impacts are statistically significant.</p>
 <pre class="r"><code>#calculate mean for Attrition &quot;Yes&quot; vs Attrition &quot;No&quot;
 mean_cm &lt;- cont_df  %&gt;% group_by(Attrition) %&gt;% summarize(across(everything(), list(mean=mean)))
@@ -241,6 +240,7 @@ pct_chg_mean_cm_reorder</code></pre>
 ## 9                      Age_mean               -10.5258468
 ## 10   TrainingTimesLastYear_mean                -7.3582971
 ## 11       PercentSalaryHike_mean                -0.8804141</code></pre>
+<pre class="r"><code>write.csv(pct_chg_mean_cm_reorder,&quot;continuous_vars_df_pct_chg.csv&quot;,row.names = FALSE)</code></pre>
 <p>From this simple % change analysis, we see that the following 3 CM sees the greatest difference in measure value between employees who left (Attrition = “Yes”) vs employees who stayed (Attrition = “No”):</p>
 <ul>
 <li>YearsInCurrentRole</li>
@@ -251,10 +251,6 @@ pct_chg_mean_cm_reorder</code></pre>
 </div>
 <div id="t-test-to-check-for-statistical-significance" class="section level3">
 <h3>T-test to Check for Statistical Significance</h3>
-<ul>
-<li>run t test, find p-value for attrition vs 3 variables, rmb use correction factor to account for multiplicity. Can plot the 3 boxplots also for easier visualisation</li>
-<li>make tableau dashboard (maybe can consider binning for deep dive if any t tests is statistically significant)</li>
-</ul>
 <p>Having narrowed down the 3 CMs, next we will be running t-tests on these 3 variables to determine the likelihood of observing the difference in means between attrition groups being due purely to random chance. The null and alternative hypothesis is laid out below in the following section:</p>
 <ul>
 <li>Null hypothesis <span class="math inline">\(H_0\)</span>: The mean measure value for the Attrition = “Yes” group is the same as the mean measure value for the Attrition = “No” group. That is, <span class="math inline">\(\mu = \mu_0\)</span>, where <span class="math inline">\(\mu_0\)</span> is the mean measure value for Attrition = “No” group.</li>
@@ -328,17 +324,22 @@ pval_df_formatted</code></pre>
 ## 1   YearsInCurrentRole 3.187390e-11 9.562171e-11
 ## 2 YearsWithCurrManager 1.185022e-10 3.555066e-10
 ## 3    TotalWorkingYears 1.159817e-11 3.479450e-11</code></pre>
-<p>We see that all 3 of the CMs have p-values &lt; 0.05 (at the scale of <span class="math inline">\(10^{-10}\)</span>) even after accounting for multiplicity issues. This implies that there is an extremely slim chance (1 out of 100 million!) that this difference in means is due to simple random sampling variation. At a significance level of 5%, we reject the null hypothesis and conclude that the mean values of the CMs for Attrition = “Yes” is NOT the same as that for the Attrition = “No” group.</p>
+<p>We see that all 3 of the chosen CMs have p-values &lt; 0.05 (at the scale of <span class="math inline">\(10^{-10}\)</span>) even after accounting for multiplicity issues. This implies that there is an extremely slim chance (1 out of 100 million!) that this difference in means is due to simple random sampling variation. At a significance level of 5%, we reject the null hypothesis and conclude that the mean values of the CMs for Attrition = “Yes” is NOT the same as that for the Attrition = “No” group.</p>
 <p>The t-test corroborates the trend seen in the initial data exploration, in that individuals who stay on for longer number of years with their manager / job role are much less likely to leave the company. We can now create a Tableau dashboard for further analysis, focusing on these 3 factors which are correlated with the employee attrition rate.</p>
-<p>###Tableau Visualizations The overall summary dashboard (first dashboard name)displays the boxplots for any of the CMs, including those that were not subjected to hypothesis testing. This dashboard provides a quick visual representation of how the measure values are spread out for each variable between the 2 attrition groupings. Key information such as the means, variance and counts of the data points in each groups has also been provided for easy exploratory analysis.</p>
-<p>The Tableau Story (tableau story name) deep dives into the 3 CMs we have run hypothesis testing for previously; we further breakdown the years of service into appropriate bins, to see if we are able to find some bins for which attrition rate is the highest for. This allows us to focus in more on these particular groups, and then suggest some appropriate mechanisms (alongside relevant literature) by which the CMs acts so as to influence (or be influenced) by attrition rates.</p>
+</div>
+<div id="tableau-visualizations" class="section level3">
+<h3>Tableau Visualizations</h3>
+<p><a href="https://public.tableau.com/shared/YRGRPXQST?:display_count=n&amp;:origin=viz_share_link">HR Attrition: Continuous Variables (Tableau)</a></p>
+<p>The overall summary dashboard (Exploratory Data Analysis) displays the boxplots for any of the CMs, including those that were not subjected to hypothesis testing. This dashboard provides a quick visual representation of how the measure values are spread out for each variable between the 2 attrition groupings. Key information such as the means and counts of the data points in each groups has also been provided for easy exploratory analysis.</p>
+<p>The Tableau Story (Deep Dive Year Intervals) deep dives into the 3 CMs we have run hypothesis testing for previously; we further breakdown the years of service into appropriate bins, to see if we are able to find some bins for which attrition rate is the highest for. This allows us to focus in more on these particular groups, and then suggest some appropriate mechanisms by which the CMs acts so as to influence (or be influenced) by attrition rates.</p>
 </div>
 </div>
 <div id="categorical-measures-catm" class="section level2">
 <h2>Categorical Measures (CatM)</h2>
 <div id="exploratory-data-analysis-1" class="section level3">
 <h3>Exploratory Data Analysis</h3>
-<p>*categorical df &gt; need to plot expected values for each categorical dv we want to test for significance. Can use loop then use chisq.test to run values. Best if can find a way to append results to original cat df (original df can add new col called expected vs observed then write “observed” to df first before we append results)</p>
+<p>Moving on to the categorical variables analysis, we will be comparing the observed (Obs) counts of each categorical measure (CatM) - Attrition combination to decide which CatM is most likely to be correlated with the Attrition rate. Once we have narrowed down a few potential CatM, we will then be running a chi square test of independence to verify that the differences observed are statistically significant.</p>
+<p>For the first part, we will need to calculate the expected values for each Attrition - CatM combinations, so that we can compare which CatM sees the greatest mismatch between the observed &amp; expected counts, which gives us a good idea of which measure is likely to be correlated to Attrition.</p>
 <pre class="r"><code>## to prep data sets for EDA analysis (compare expected vs actual counts)
   ## for loop to prep all var cols
 for (i in 2:ncol(cat_df)) {
@@ -353,6 +354,7 @@ for (i in 2:ncol(cat_df)) {
   chisq &lt;- chisq.test(expt)
   expt &lt;- as.data.frame(chisq$expected)
   expt &lt;- expt %&gt;% mutate(Attrition = c(&quot;No&quot;,&quot;Yes&quot;), obs_or_exp = &quot;expt&quot;, Variable = names(obs[4]))
+  ## arrange into same number of 
   expt &lt;- data.frame(expt[(ncol(expt)-2):ncol(expt)],stack(expt[1:(ncol(expt)-3)]));
   expt[,c(4:5)] = expt[,c(5:4)]
   
@@ -387,13 +389,52 @@ head(collated, n=20)</code></pre>
 ## 18       Yes        obs     Department                  Sales  92.00000
 ## 19        No       expt     Department        Human Resources  52.84286
 ## 20       Yes       expt     Department        Human Resources  10.15714</code></pre>
-<p>*can use tableau then to check variables one by one for which variables seems to see the greatest mismatch btw observed and expected. Pick top 3 variables we want to test.</p>
+<pre class="r"><code>write.csv(collated,&quot;categorical_vars_df.csv&quot;,row.names = FALSE)</code></pre>
+<p>Once the data set has been processed, we will proceed to visualize the different potential combinations in Tableau.</p>
+<p><a href="https://public.tableau.com/views/HRAttrition_16370226191610/Cat_Var?:language=en-US&amp;publish=yes&amp;:display_count=n&amp;:origin=viz_share_link">HR Attrition Categorical Variables: Expected vs Observed Counts</a></p>
+<p>The 3 CatM which seems to see the greatest mismatch between observed and expected counts are as follows: * OverTime * StockOptionLevel * MaritalStatus</p>
+<p>These 3 measures will be checked for independence in the following section.</p>
 </div>
 <div id="chisq-test-to-check-for-statistical-significance" class="section level3">
 <h3>Chisq-test to Check for Statistical Significance</h3>
-<p><em>Run chisq test for categorical independence for those 3 variables, present results in tbl/df format. Rmb to account for multiplicity using correction factor again. </em>zoom in on any dvs that have statistical significance. suggest mechanisms in tableau story (with research?)</p>
-<p>##Limitations of Analysis * add in current analysis cannot account for coupled effects between a cat var vs a cont var; in the future would like to explore a model to handle such instances. right now we can only make a tableau dashboard to add all relevant information inside, and end users have to decide how to do deep dive. The above analysis serves as a starting point to guide end users on which variables they can start to focus on</p>
+<p>The chi square test of independence is suitable when the 3 conditions below are met for the data: 1. Data is obtained by simple random sampling 2. Variables are both categorical in nature 3. Each combination of the levels of the 2 variables must have at least 5 expected values</p>
+<p>Both criteria 1 &amp; 2 have been verified to be true prior to this section; for criteria 3, we check the cnt of the expected values for each of the measures, and confirm that there are at least 5 values for each combination.</p>
+<pre class="r"><code>## run chisq test for independence to check for statistical significance
+  #subset only relevant variables
+chitest_df &lt;- raw_df %&gt;% select (c(&quot;Attrition&quot;,
+                     &quot;OverTime&quot;,
+                     &quot;StockOptionLevel&quot;,
+                     &quot;MaritalStatus&quot;))
+chi_raw_pvalue &lt;- numeric(length=ncol(chitest_df)-1)
+
+for (i in 2:ncol(chitest_df)) {
+  ## calculate p-value for each subgroup
+  expt &lt;- table(chitest_df[,c(1,i)])
+  chisq &lt;- chisq.test(expt)
+  chi_raw_pvalue[i-1] &lt;- chisq$p.value
+}
+  
+  chi_pval_df_formatted &lt;- data.frame(
+  Variable = names(chitest_df[, 2:ncol(chitest_df)]),
+  raw_pvalue = chi_raw_pvalue
+)
+
+chi_pval_df_formatted$Bonferroni &lt;-
+  p.adjust(chi_pval_df_formatted$raw_pvalue,
+    method = &quot;bonferroni&quot;
+  )
+chi_pval_df_formatted</code></pre>
+<pre><code>##           Variable   raw_pvalue   Bonferroni
+## 1         OverTime 8.158424e-21 2.447527e-20
+## 2 StockOptionLevel 4.379390e-13 1.313817e-12
+## 3    MaritalStatus 9.455511e-11 2.836653e-10</code></pre>
+<p>We observe that the 3 CatM sees adjusted p-values of &lt; 0.05 (~<span class="math inline">\(10^{-10}\)</span>), providing strong evidence for correlation. Hence, we can look into the mechanisms by which these 3 measures might influence Attrition rate.</p>
 </div>
+</div>
+<div id="limitations-of-analysis" class="section level2">
+<h2>Limitations of Analysis</h2>
+<p>For this simple exercise, we have merely considered which continuous/categorical variables are likely to impact Attrition rate. We choose the 3 most likely continuous &amp; categorical variables that correlates to the response variable attrition, and run appropriate statistical tests to verify that the observed correlations are unlikely to be due to random sampling variation.</p>
+<p>However, we do not consider any interactive effects between the continuous and categorical variables. Additionally, we have not made any models to predict the possibility of attrition given a few variables that were determined to be highly correlated to the attrition response variable. Future development of this analysis could include the use of some logistic regression (binomial in this case, multinomial if response categories &gt;2) model for these predictions, where we predict the probability of seeing an employee leave the company given a set of categorical and continuous variable values.</p>
 </div>
 </div>
 

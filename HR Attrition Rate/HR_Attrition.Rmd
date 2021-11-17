@@ -16,7 +16,7 @@ library(ggpubr)
 We are given a fictional data set containing employee information from IBM. The goal is to explore the given data using suitable analysis methods to suggest possible reasons for employee attrition. Using the insights obtained from this analysis, we will then create a Tableau Story to communicate to stakeholders the results, and suggest the most likely mechanism these factors are leading to employee attrition.
 
 ## Environment Setup
-A cursory look at the data reveals that there are 2 main types of column data: categorical and continuous. As the statistical tests to run differs for each of these data types, we will first proceed by spitting the raw data into 2 distinct dataframes (categorical data vs continuous data). Within each subgroup, we will then determine which variables are most likely to affect employee attrition rate by using appropriate statistical testing methods.
+A cursory look at the data reveals that there are 2 main types of column data: categorical and continuous. As the statistical tests to run differs for each of these data types, we will first proceed by spitting the raw data into 2 distinct data frames (categorical data vs continuous data). Within each subgroup, we will then determine which variables are most likely to affect employee attrition rate by using appropriate statistical testing methods.
 
 ```{r}
 #set up df: split into 2 distinct df for categorical dv and continuous dv
@@ -59,9 +59,6 @@ write.csv(cont_df,"continuous_vars_df.csv",row.names = FALSE)
 
 ## Continuous DVs
 ### Exploratory Data Analysis
-* Continuous df > response variable will be cat attrition variable (Yes vs No) , summarise mean of continuous variables and compare for attrition Yes vs attrition No. Take ref to attrition No mean to calculate % change. Can groupby then order by attrition field and finally use lag() to calc (this part prob can use Tableau LOD to find also)
-*find top 3 variables for which % change is largest, then use ggplot2 to plot out and facet wrap 
-
 To start off with, we will be pre-processing the continuous measures (CMs) data set in order to decide which CM has the highest potential impact on attrition rate, and then further run hypothesis testing to see if these observed impacts are statistically significant.
 
 ```{r}
@@ -166,14 +163,17 @@ pval_df_formatted$Bonferroni <-
 pval_df_formatted
 ```
 
-We see that all 3 of the CMs have p-values < 0.05 (at the scale of $10^{-10}$) even after accounting for multiplicity issues. This implies that there is an extremely slim chance (1 out of 100 million!) that this difference in means is due to simple random sampling variation. At a significance level of 5%, we reject the null hypothesis and conclude that the mean values of the CMs for Attrition = "Yes" is NOT the same as that for the Attrition = "No" group. 
+We see that all 3 of the chosen CMs have p-values < 0.05 (at the scale of $10^{-10}$) even after accounting for multiplicity issues. This implies that there is an extremely slim chance (1 out of 100 million!) that this difference in means is due to simple random sampling variation. At a significance level of 5%, we reject the null hypothesis and conclude that the mean values of the CMs for Attrition = "Yes" is NOT the same as that for the Attrition = "No" group. 
 
 The t-test corroborates the trend seen in the initial data exploration, in that individuals who stay on for longer number of years with their manager / job role are much less likely to leave the company. We can now create a Tableau dashboard for further analysis, focusing on these 3 factors which are correlated with the employee attrition rate. 
 
-###Tableau Visualizations
+### Tableau Visualizations
+
+[HR Attrition: Continuous Variables (Tableau)](https://public.tableau.com/shared/YRGRPXQST?:display_count=n&:origin=viz_share_link)
+
 The overall summary dashboard (Exploratory Data Analysis) displays the boxplots for any of the CMs, including those that were not subjected to hypothesis testing. This dashboard provides a quick visual representation of how the measure values are spread out for each variable between the 2 attrition groupings. Key information such as the means and counts of the data points in each groups has also been provided for easy exploratory analysis. 
 
-The Tableau Story (Deep Dive Year Intervals) deep dives into the 3 CMs we have run hypothesis testing for previously; we further breakdown the years of service into appropriate bins, to see if we are able to find some bins for which attrition rate is the highest for. This allows us to focus in more on these particular groups, and then suggest some appropriate mechanisms (alongside relevant literature) by which the CMs acts so as to influence (or be influenced) by attrition rates.
+The Tableau Story (Deep Dive Year Intervals) deep dives into the 3 CMs we have run hypothesis testing for previously; we further breakdown the years of service into appropriate bins, to see if we are able to find some bins for which attrition rate is the highest for. This allows us to focus in more on these particular groups, and then suggest some appropriate mechanisms by which the CMs acts so as to influence (or be influenced) by attrition rates.
 
 ## Categorical Measures (CatM)
 ### Exploratory Data Analysis
@@ -217,7 +217,7 @@ write.csv(collated,"categorical_vars_df.csv",row.names = FALSE)
 
 Once the data set has been processed, we will proceed to visualize the different potential combinations in Tableau.
 
-Categorical Variables Expected vs Observed COunts []
+[HR Attrition Categorical Variables: Expected vs Observed Counts](https://public.tableau.com/views/HRAttrition_16370226191610/Cat_Var?:language=en-US&publish=yes&:display_count=n&:origin=viz_share_link)
 
 The 3 CatM which seems to see the greatest mismatch between observed and expected counts are as follows:
 * OverTime
@@ -261,9 +261,10 @@ chi_pval_df_formatted$Bonferroni <-
   )
 chi_pval_df_formatted
 ```
-We observe that the 3 CatM sees adjusted p-values of < 0.05 (~$10^{-10}$), providing strong evidence for correlation. Hence, we can look into the mechanisms by which these 3 measures might influence Attrition rate. Some potential suggestions are brought up in the Tableau Story for the categorical variables, alongside some literature for support.
 
-##Limitations of Analysis
-For this simple exercise, we have merely considered which continuous/categorical variables are likely to impact Attrition rate. We choose the 3 most likely continuous & categorical variables that correlates to the response variable attrition, and run appropriate statistical tests to verify that the observed correlations are unlikely to be due to random sampling variation. Lastly, we propose the mechanisms by which these variables could contribute to changes in attrition rate in the Tableau dashboards.
+We observe that the 3 CatM sees adjusted p-values of < 0.05 (~$10^{-10}$), providing strong evidence for correlation. Hence, we can look into the mechanisms by which these 3 measures might influence Attrition rate.
 
-However, we do not consider any interactive effects between the continuous and categorical variables. Additionally, we have not made any models to predict the possibility of attrition given a few highly correlated variables. Future development of this analysis could include the use of some logistic regression (binomial in this case, multinomial if response categories >2) model for these predictions, where we predict the probability of seeing an employee leave the company given a set of categorical and continuous variable values. 
+## Limitations of Analysis
+For this simple exercise, we have merely considered which continuous/categorical variables are likely to impact Attrition rate. We choose the 3 most likely continuous & categorical variables that correlates to the response variable attrition, and run appropriate statistical tests to verify that the observed correlations are unlikely to be due to random sampling variation.
+
+However, we do not consider any interactive effects between the continuous and categorical variables. Additionally, we have not made any models to predict the possibility of attrition given a few variables that were determined to be highly correlated to the attrition response variable. Future development of this analysis could include the use of some logistic regression (binomial in this case, multinomial if response categories >2) model for these predictions, where we predict the probability of seeing an employee leave the company given a set of categorical and continuous variable values. 
