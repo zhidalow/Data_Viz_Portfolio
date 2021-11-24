@@ -1,0 +1,5 @@
+#activate venv
+scraper-env\Scripts\activate.bat
+
+#run crawlspider 
+scrapy crawl foodinfo -O foodinfo.json
